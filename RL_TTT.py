@@ -6,32 +6,147 @@ import json
 
 
 class GameBoard:
-    def __init__(self, board_size):
+    def __init__(self, board_size, player_x, player_y):
         self.board_size = board_size
-        self.board = np.zeros([board_size, board_size])
+        self.board = np.zeros([board_size, board_size], dtype=int)
+        self.state = ''
+        self.hash_board()
+        self.players = {'X': player_x, 'Y': player_y}
+        # 1s Represent Xs and -1s Represent Os
 
-    def check_win(self):
+    def hash_board(self):
+        self.state = ''.join(self.board.flatten().astype(str))
+
+    def check_state(self):
         """
-        This function checks and returns true(win)if there exists any row or column or either of the diagonals has
-        all Xs(1s) or Os(-1s).
-        :return: Winner or 0
+        This function checks and returns the winner, draw or if the game is still in play.
+        it checks of there exists any row or column or either of the diagonals has all Xs(1s) or Os(-1s).
+
+        :return: Winner or draw
         """
         # check rows and columns
         for i in range(self.board_size):
             if (np.sum(self.board[:, i]) == self.board_size) or (np.sum(self.board[i, :]) == self.board_size):
-                return 1
+                return 'X'
             if (np.sum(self.board[:, i]) == -self.board_size) or (np.sum(self.board[i, :]) == -self.board_size):
-                return -1
+                return 'O'
 
         # check diagonals.
         if (np.sum(np.diag(self.board)) == self.board_size) or (
                 np.sum(np.diag(np.fliplr(self.board))) == self.board_size):
-            return 1
+            return 'X'
         if (np.sum(np.diag(self.board)) == -self.board_size) or (
                 np.sum(np.diag(np.fliplr(self.board))) == -self.board_size):
-            return -1
+            return 'O'
 
-        return 0
+        # Now that we know both X and O has not won, the game can either be in play or a draw.
+        if np.isin(0, self.board):
+            return 'Play'
+        else:
+            return 'Draw'
+
+    def is_available(self, position):
+        if self.board[(position - 1) // 3, (position - 1) % 3] == 0:
+            return True
+        else:
+            return False
+
+    def set_position(self, player_symbol, position):
+        if player_symbol == 'X':
+            player_symbol = 1
+        else:
+            player_symbol = -1
+
+        self.board[(position - 1) // 3, (position - 1) % 3] = player_symbol
+
+        # recalculating the state hash.
+
+    def reset_board(self):
+        self.board = np.zeros([self.board_size, self.board_size])
+
+    def play_game(self):
+        self.reset_board()
+        game_state = self.check_state()
+        # Player X always plays first.
+        while game_state == 'Play':
+            # Both players observe, and act according to the state they perceive.
+            for current_player in ['X', 'O']:
+                # Every time a player senses a state, They make a move and observes the changed state.
+                # They then learns about the previous state and action.
+                # Learning about the previous state is important.
+                # In the Q-Learning algorithm, the value is updated using 2 factors. the reward and the expected reward
+                # from the next state.
+                # It is easier to let the game calculate the next state than have the player calculate it themselves.
+
+                # If the game ends, they sense an 'END' and learn about their previous action.
+                # Which is same as the current action for X.
+                # The only exception is if X wins. Then, O learns about its previous action.
+
+                # This check is primarily for the player playing O
+                if self.check_state() == 'X':
+                    # i.e. if the game is won by X. (Draw need not be checked as O will always be the one drawing.)
+                    # O need not play and the loop moves to giving rewards.
+                    # self.players[current_player].sense_state('END')
+                    break
+                else:
+                    # This happens if the game is still in play, i.e. if X or O is to make a move.
+                    self.players[current_player].sense_state(self.state)
+
+                    # The current_player takes a decision/Acts based on its knowledge and observation.
+                    while True:
+                        action = self.players[current_player].get_action()
+                        if self.is_available(action):
+                            break
+                    self.set_position(current_player, action)
+
+                    # The state of the Board/Environment Changes.
+                    # The players turn ends and the player switches automatically.
+                    # If the player is X then it becomes O
+                    # Else the round ends.
+
+                # In case the player was O and the last turn of X had caused the game to end. O Simply senses
+                # the state as END.
+
+            # Both players have seen the board and made their move.
+            game_state = self.check_state()
+            # If X won the game, O has already set its game state as END. it will be learning that its previous
+            # move was bad.
+            if game_state == 'X':
+                self.players['X'].sense_state('END')
+                x_reward = 1
+                o_reward = -1
+
+            # If O won or Drew the game, we have to set the state of X and O as end so that they can learn about their
+            # last move.
+            elif game_state == 'O':
+                x_reward = -1
+                o_reward = 1
+            elif game_state == 'Draw':
+                x_reward = 0
+                o_reward = 0
+
+                # If the game is still in play the players just get 0 reward and the game continues.
+
+                # Once both players are done playing. The game evaluates and gives reward to the players.
+                # This eliminates the win check for one player when the other has won.
+
+                self.players[current_player].sense_change(self.state)
+                # Gets a reward based on the change.
+                self.check_state()
+
+                # The player updates/Learns the decision of the previous action, for the previous state.
+
+
+        else:
+        # We now know that the game is not in play.
+        if game_state == 'X':
+            print('X Wins!')
+
+        elif game_state == 'O':
+            print('O Wins!')
+
+        else:
+            print('The game is a Draw!')
 
 
 class Brain:
